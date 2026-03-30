@@ -8,3 +8,6 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? repoBase : '/',
   plugins: [react()],
 })) 
+
+
+// Nice app kudos
