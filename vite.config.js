@@ -7,4 +7,4 @@ const repoBase = '/v3-builder-ui-mayank/'
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? repoBase : '/',
   plugins: [react()],
-}))
+})) 
