@@ -78,8 +78,9 @@ export function FlowSettingsPanel({ flowConfig, setFlowConfig, nodeIds, onClose 
                   <Text className="text-xs">Start Node</Text>
                   <Select
                     className="mt-1 w-full"
+                    showSearch
                     allowClear
-                    placeholder="Select start node"
+                    placeholder="Search & select start node"
                     options={nodeIds.map((id) => ({ value: id, label: id }))}
                     value={flowConfig.start || undefined}
                     onChange={(v) =>

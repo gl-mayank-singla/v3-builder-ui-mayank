@@ -217,14 +217,20 @@ export function NodeConfigPanel({
   )
 }
 
+function filterNodeOption(input, option) {
+  return (option?.value || '').toLowerCase().includes(input.toLowerCase())
+}
+
 function NextNodeSelect({ opts, value, onChange }) {
   return (
     <div>
       <Text className="text-xs">Next Node</Text>
       <Select
         className="mt-1 w-full"
+        showSearch
+        filterOption={filterNodeOption}
         allowClear
-        placeholder="Select target"
+        placeholder="Search & select target"
         options={opts}
         value={value}
         onChange={(v) => onChange(v || '')}
@@ -724,7 +730,10 @@ function DecisionFields({ data, patchData, id, edges, setEdges, opts }) {
                 <Text className="text-xs">Target</Text>
                 <Select
                   className="mt-1 w-full"
+                  showSearch
+                  filterOption={filterNodeOption}
                   allowClear
+                  placeholder="Search & select target"
                   options={opts}
                   value={caseTarget(ci)}
                   onChange={(v) => setCaseTarget(ci, v)}
@@ -784,7 +793,10 @@ function DecisionFields({ data, patchData, id, edges, setEdges, opts }) {
         <Text className="text-xs">Default Route</Text>
         <Select
           className="mt-1 w-full"
+          showSearch
+          filterOption={filterNodeOption}
           allowClear
+          placeholder="Search & select target"
           options={opts}
           value={defaultTarget}
           onChange={(v) => setDefaultTarget(v || '')}
@@ -958,8 +970,10 @@ function LlmRouterFields({ data, patchData, id, edges, setEdges, opts }) {
                 </Text>
                 <Select
                   className="mt-1 w-full"
+                  showSearch
+                  filterOption={filterNodeOption}
                   allowClear
-                  placeholder="Auto (key as target)"
+                  placeholder="Search target (auto = key)"
                   options={opts}
                   value={optionTarget(key)}
                   onChange={(v) => setOptionTarget(key, v || '')}
