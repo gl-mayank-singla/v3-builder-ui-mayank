@@ -1,0 +1,866 @@
+{
+  "name": "CIBIL_AU_Bank",
+  "version": "4.0.0",
+  "start": "greeting",
+  "variables_schema": {
+    "customer_name": { "type": "string", "description": "Customer's name (injected)" },
+    "existing_product": { "type": "string", "description": "Customer's existing AU Bank product (injected)" },
+    "interested_product": { "type": "string", "description": "Product customer previously showed interest in (injected, may be null)" },
+    "preapproved_product": { "type": "string", "description": "Pre-approved offer A product name (injected)" },
+    "preapproved_amount": { "type": "string", "description": "Pre-approved offer A amount (injected)" },
+    "preapproved_product1": { "type": "string", "description": "Pre-approved offer B product name (injected)" },
+    "preapproved_amount1": { "type": "string", "description": "Pre-approved offer B amount (injected)" },
+    "preapproved_product2": { "type": "string", "description": "Pre-approved offer C product name (injected)" },
+    "preapproved_amount2": { "type": "string", "description": "Pre-approved offer C amount (injected)" },
+    "roi": { "type": "string", "description": "Rate of interest for pre-approved offer (injected)" },
+    "loan_tenure": { "type": "string", "description": "Loan tenure for pre-approved offer (injected)" },
+    "previous_interaction_summary": { "type": "string", "description": "Summary of previous calls (injected)" },
+    "subcategory_preapproved_product": { "type": "string", "description": "Subcategory of preapproved product (injected)" },
+    "name_confirmed": { "type": "string", "description": "Whether customer confirmed identity" },
+    "customer_intent": { "type": "string", "description": "Classified loan intent from router" },
+    "loan_amount": { "type": "string", "description": "Loan amount requested by customer" },
+    "interested_response": { "type": "string", "description": "Customer response to interested product pitch" },
+    "preapproved_response": { "type": "string", "description": "Customer response to pre-approved offer pitch" },
+    "vehicle_type": { "type": "string", "description": "Type of vehicle (two-wheeler/four-wheeler/commercial)" },
+    "new_or_used": { "type": "string", "description": "New or used vehicle" },
+    "company_name": { "type": "string", "description": "Business company name" },
+    "business_constitution": { "type": "string", "description": "Business entity type" },
+    "nature_of_business": { "type": "string", "description": "What the business does" }
+  },
+  "llm_defaults": {
+    "model": "azure:gpt-4.1-mini",
+    "instructions": [
+      "You are Swarna, a female top sales performer for AU Small Finance Bank from the upsell and cross-sell team.",
+      "Speak in natural Hinglish — Hindi in Devanagari with simple English words mixed in.",
+      "Keep responses to 2-3 sentences max. Be concise and natural.",
+      "Never use numbered lists in speech. Keep points natural and conversational.",
+      "If the user asks you to repeat, repeat the previously said line.",
+      "Do not output the customer name in every response.",
+      "Always be polite and respectful.",
+      "DO NOT entertain random requests unrelated to the call purpose (jokes, trivia, etc.).",
+      "When user asks to wait or hold on, acknowledge politely.",
+      "Listen to responses patiently and clarify ambiguity before proceeding.",
+      "This is an outbound call — never say 'how can I help you'.",
+      "Call centre number if asked: 180012001200"
+    ]
+  },
+  "global_instructions": {
+    "agent_persona": "You are Swarna, a female top sales performer for AU Small Finance Bank. You are from the upsell and cross-sell team. Listen to their responses patiently and if there is ambiguity, clarify before proceeding."
+  },
+  "interrupts": {
+    "wrong_person": {
+      "description": "Customer says they are not the intended person, denies being ${customer_name}, says wrong number, or says the person is unavailable at this number",
+      "target": { "goto": "wrong_rpc_end" }
+    },
+    "end_call_request": {
+      "description": "Customer explicitly asks to end the call, hang up, or says goodbye",
+      "target": { "goto": "closing" }
+    },
+    "not_interested_at_all": {
+      "description": "Customer clearly states they are not interested in any product or loan whatsoever and wants to end the conversation",
+      "target": { "goto": "closing" }
+    },
+    "repeat_request": {
+      "description": "Customer asks to repeat what was said",
+      "target": { "system": "REITERATE" }
+    }
+  },
+  "feature_flags": {
+    "flow_engine_v3_enabled": true,
+    "is_streaming_enabled": true
+  },
+  "agents": {},
+  "terminal_tool_names": [],
+  "nodes": {
+
+    "greeting": {
+      "type": "prompt",
+      "say": {
+        "text": "Namaste! Main Swarna bol rahi hoon, AU Small Finance Bank se. Kya main ${customer_name} ji se baat kar rahi hoon?",
+        "mode": "generative",
+        "instructions": [
+          "Greet warmly and ask if you are speaking to ${customer_name}.",
+          "Use natural Hinglish greeting.",
+          "Keep it to 1-2 sentences only."
+        ]
+      },
+      "next": { "goto": "capture_rpc" }
+    },
+
+    "capture_rpc": {
+      "type": "variable_capture",
+      "vars": ["name_confirmed"],
+      "instructions": [
+        "Extract whether the customer confirmed they are ${customer_name}.",
+        "Set name_confirmed to 'yes' if they confirm identity.",
+        "Set name_confirmed to 'no' if they deny identity, say wrong number, or say the person is unavailable.",
+        "Set name_confirmed to 'unclear' if the response is ambiguous or they just say hello."
+      ],
+      "next": { "goto": "rpc_check" }
+    },
+
+    "rpc_check": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "name_confirmed", "op": "==", "value": "no" }],
+            "target": { "goto": "wrong_rpc_end" }
+          },
+          {
+            "when": [{ "var": "name_confirmed", "op": "==", "value": "yes" }],
+            "target": { "goto": "check_interested_product" }
+          }
+        ],
+        "default": { "goto": "re_ask_name" }
+      }
+    },
+
+    "re_ask_name": {
+      "type": "prompt",
+      "say": {
+        "text": "मैंने सही से सुना नहीं, क्या आप ${customer_name} बोल रहे हैं?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "capture_rpc" }
+    },
+
+    "wrong_rpc_end": {
+      "type": "end",
+      "say": {
+        "text": "Oh, I'm sorry. यह कॉल ${customer_name} के लिए थी। आपको डिस्टर्ब करने के लिए सॉरी। आपका दिन अच्छा रहे।",
+        "mode": "deterministic"
+      }
+    },
+
+
+
+    "check_interested_product": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "interested_product", "op": "==", "value": null }],
+            "target": { "goto": "ask_general_loan_need" }
+          },
+          {
+            "when": [{ "var": "interested_product", "op": "==", "value": "" }],
+            "target": { "goto": "ask_general_loan_need" }
+          }
+        ],
+        "default": { "goto": "pitch_interested_product" }
+      }
+    },
+
+    "pitch_interested_product": {
+      "type": "prompt",
+      "say": {
+        "text": "Thank you ${customer_name} जी, आप AU Bank के ${existing_product} valued customer हैं। क्या हम आपकी ${interested_product} loan में कोई मदद कर सकते हैं?",
+        "mode": "generative",
+        "instructions": [
+          "Thank the customer, mention their existing ${existing_product} relationship with AU Bank.",
+          "Ask if they need help with ${interested_product}.",
+          "Keep it warm and concise — 2 sentences max."
+        ]
+      },
+      "next": { "goto": "capture_interested_response" }
+    },
+
+    "capture_interested_response": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Determine if the customer is interested in the pitched product.",
+        "Set interested_response to 'yes' if they show positive interest or want to proceed.",
+        "Set interested_response to 'no' if they decline or say they don't need it."
+      ],
+      "next": { "goto": "interested_response_check" }
+    },
+
+    "interested_response_check": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "interested_response", "op": "==", "value": "yes" }],
+            "target": { "goto": "route_to_loan_agent" }
+          }
+        ],
+        "default": { "goto": "check_preapproved_offers" }
+      }
+    },
+
+    "route_to_loan_agent": {
+      "type": "llm_router",
+      "options": {
+        "personal_loan_flow": {
+          "description": "Customer is interested in Personal Loan",
+          "target": { "goto": "pl_entry" }
+        },
+        "vehicle_loan_flow": {
+          "description": "Customer is interested in Vehicle Loan, Car Loan, Two-wheeler Loan, Truck Loan, or any wheels product",
+          "target": { "goto": "vl_entry" }
+        },
+        "gold_loan_flow": {
+          "description": "Customer is interested in Gold Loan",
+          "target": { "goto": "gl_ask_amount" }
+        },
+        "home_loan_flow": {
+          "description": "Customer is interested in Home Loan",
+          "target": { "goto": "hl_ask_amount" }
+        },
+        "business_od_flow": {
+          "description": "Customer is interested in Business Loan, Business OD, or Overdraft",
+          "target": { "goto": "bod_ask_amount" }
+        },
+        "credit_card_flow": {
+          "description": "Customer is interested in Credit Card",
+          "target": { "goto": "cc_entry" }
+        },
+        "preapproved_flow": {
+          "description": "Customer is interested in one of their pre-approved offers specifically (mentioned pre-approved or specific preapproved product)",
+          "target": { "goto": "preapproved_tell" }
+        },
+        "other_loan_flow": {
+          "description": "Customer is interested in a loan product not listed above (education, LAP, etc.)",
+          "target": { "goto": "other_ask_amount" }
+        },
+        "not_interested": {
+          "description": "Customer is not interested in any loan right now",
+          "target": { "goto": "closing" }
+        }
+      },
+      "listen": false,
+      "confidence_threshold": 0.7,
+      "instructions": [
+        "Classify based on the customer's stated interest and ${interested_product}.",
+        "If ${interested_product} matches a specific loan type, route there.",
+        "If customer mentioned a pre-approved offer, route to preapproved_flow."
+      ]
+    },
+
+    "ask_general_loan_need": {
+      "type": "prompt",
+      "say": {
+        "text": "Thank you ${customer_name} जी, आप हमारे valued customer हैं, इसलिए हम आपको priority services दे रहे हैं। क्या आपको अभी किसी भी तरह के लोन की जरूरत है? जैसे कि Home Loan, Personal Loan, Gold Loan, Business OD, Vehicle Loan या Credit Card?",
+        "mode": "generative",
+        "instructions": [
+          "Thank the customer as a valued customer.",
+          "Mention this is a priority service for special customers.",
+          "Ask about any loan need: Home, Personal, Gold, Business OD, Vehicle Loan, or Credit Card.",
+          "Keep it natural, 2-3 sentences."
+        ]
+      },
+      "next": { "goto": "capture_general_need" }
+    },
+
+    "capture_general_need": {
+      "type": "variable_capture",
+      "vars": ["customer_intent"],
+      "instructions": [
+        "Extract what type of loan or product the customer is interested in.",
+        "Possible values: personal_loan, vehicle_loan, gold_loan, home_loan, business_od, credit_card, other, not_interested.",
+        "If customer mentions car/bike/truck/vehicle/wheels → vehicle_loan.",
+        "If customer says no to everything → not_interested."
+      ],
+      "next": { "goto": "general_need_router" }
+    },
+
+    "general_need_router": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "personal_loan" }],
+            "target": { "goto": "pl_entry" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "vehicle_loan" }],
+            "target": { "goto": "vl_entry" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "gold_loan" }],
+            "target": { "goto": "gl_ask_amount" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "home_loan" }],
+            "target": { "goto": "hl_ask_amount" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "business_od" }],
+            "target": { "goto": "bod_ask_amount" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "credit_card" }],
+            "target": { "goto": "cc_entry" }
+          },
+          {
+            "when": [{ "var": "customer_intent", "op": "==", "value": "not_interested" }],
+            "target": { "goto": "check_preapproved_offers" }
+          }
+        ],
+        "default": { "goto": "other_ask_amount" }
+      }
+    },
+
+
+
+    "check_preapproved_offers": {
+      "type": "llm_router",
+      "listen": false,
+      "confidence_threshold": 0.8,
+      "options": {
+        "pitch_three_preapproved": {
+          "description": "All three pre-approved products are available — preapproved_product, preapproved_product1, and preapproved_product2 all have non-empty, non-null values",
+          "target": { "goto": "pitch_three_preapproved" }
+        },
+        "pitch_two_preapproved": {
+          "description": "Exactly two pre-approved products are available — preapproved_product and preapproved_product1 have values, but preapproved_product2 is empty or null",
+          "target": { "goto": "pitch_two_preapproved" }
+        },
+        "pitch_one_preapproved": {
+          "description": "Only one pre-approved product is available — preapproved_product has a value, but preapproved_product1 and preapproved_product2 are empty or null",
+          "target": { "goto": "pitch_one_preapproved" }
+        },
+        "no_preapproved": {
+          "description": "No pre-approved products are available — all of preapproved_product, preapproved_product1, and preapproved_product2 are empty or null",
+          "target": { "goto": "pitch_lav_fallback" }
+        }
+      },
+      "instructions": [
+        "Check the values of ${preapproved_product}, ${preapproved_product1}, ${preapproved_product2}.",
+        "Count how many have a real, non-empty value (not null, not empty string, not 'none').",
+        "Route based on how many pre-approved offers are available: three, two, one, or none."
+      ]
+    },
+
+    "pitch_three_preapproved": {
+      "type": "prompt",
+      "say": {
+        "text": "कोई बात नहीं ${customer_name} जी। AU Bank की तरफ से आपके पास pre-approved ${preapproved_product}, ${preapproved_product1} और ${preapproved_product2} के offers available हैं। क्या आप इनमें से कोई ऑफर लेना चाहेंगे?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "capture_preapproved_response" }
+    },
+
+    "pitch_two_preapproved": {
+      "type": "prompt",
+      "say": {
+        "text": "कोई बात नहीं ${customer_name} जी। AU Bank की तरफ से आपके पास pre-approved ${preapproved_product} और ${preapproved_product1} के offers available हैं। क्या आप इनमें से कोई ऑफर लेना चाहेंगे?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "capture_preapproved_response" }
+    },
+
+    "pitch_one_preapproved": {
+      "type": "prompt",
+      "say": {
+        "text": "कोई बात नहीं ${customer_name} जी। AU Bank की तरफ से आपके पास ₹${preapproved_amount} तक का pre-approved ${preapproved_product} offer available है। क्या हम इसे avail करने के लिए आगे बढ़ें?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "capture_preapproved_response" }
+    },
+
+    "capture_preapproved_response": {
+      "type": "variable_capture",
+      "vars": ["preapproved_response", "customer_intent"],
+      "instructions": [
+        "Determine if the customer wants to avail a pre-approved offer.",
+        "Set preapproved_response to 'yes' if interested, 'no' if declined.",
+        "If yes, also set customer_intent to the product type they want: personal_loan, vehicle_loan, credit_card, etc.",
+        "Map 'wheels' to vehicle_loan, 'PL' to personal_loan, 'CC' to credit_card."
+      ],
+      "next": { "goto": "preapproved_response_check" }
+    },
+
+    "preapproved_response_check": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "preapproved_response", "op": "==", "value": "yes" }],
+            "target": { "goto": "preapproved_tell" }
+          }
+        ],
+        "default": { "goto": "pitch_lav_fallback" }
+      }
+    },
+
+    "pitch_lav_fallback": {
+      "type": "prompt",
+      "say": {
+        "text": "वैसे आपके पास Loan Against Vehicle का भी option है। आप अपनी गाड़ी पर भी loan ले सकते हैं, बस शर्त ये है कि उस पर कोई existing loan नहीं होना चाहिए।",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "capture_lav_response" }
+    },
+
+    "capture_lav_response": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Determine if customer is interested in Loan Against Vehicle.",
+        "Set interested_response to 'yes' if interested, 'no' if not."
+      ],
+      "next": { "goto": "lav_response_check" }
+    },
+
+    "lav_response_check": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "interested_response", "op": "==", "value": "yes" }],
+            "target": { "goto": "callback_confirmation" }
+          }
+        ],
+        "default": { "goto": "closing" }
+      }
+    },
+
+    "pl_entry": {
+      "type": "prompt",
+      "say": {
+        "text": "Customer ${customer_name} is interested in Personal Loan.",
+        "mode": "generative",
+        "instructions": [
+          "You are handling Personal Loan interest for ${customer_name}.",
+          "Check the pre-approved offer variables: ${preapproved_product}, ${preapproved_product1}, ${preapproved_product2}.",
+          "If ANY of them equals 'Personal Loan', pitch it: 'एक बढ़िया news है! AU Bank की तरफ से आपके पास ₹[matched amount] तक का pre-approved Personal Loan offer available है। क्या हम इसे आगे बढ़ाएं?'",
+          "Use the CORRECT matched amount: if preapproved_product='Personal Loan' use ₹${preapproved_amount}, if preapproved_product1='Personal Loan' use ₹${preapproved_amount1}, if preapproved_product2='Personal Loan' use ₹${preapproved_amount2}.",
+          "If NONE contain 'Personal Loan', ask: 'ठीक है, तो क्या मैं जान सकती हूँ कि आप लगभग कितने loan amount के बारे में सोच रहे हैं?'",
+          "NEVER reveal that no offer exists. NEVER say 'offer nahi hai'.",
+          "NEVER use an amount from a non-Personal-Loan offer."
+        ]
+      },
+      "next": { "goto": "pl_capture" }
+    },
+
+    "pl_capture": {
+      "type": "variable_capture",
+      "vars": ["loan_amount", "interested_response"],
+      "instructions": [
+        "Extract loan amount if mentioned.",
+        "Set interested_response to 'yes' if customer wants to proceed with pre-approved offer.",
+        "Set interested_response to 'no' if customer declines or asks for higher amount."
+      ],
+      "next": { "goto": "pl_response_check" }
+    },
+
+    "pl_response_check": {
+      "type": "llm_router",
+      "options": {
+        "pl_sms": {
+          "description": "Customer accepted the offer or provided loan amount and conversation can proceed to SMS confirmation",
+          "target": { "goto": "pl_sms" }
+        },
+        "pl_lav_pitch": {
+          "description": "Customer declined the pre-approved offer or asked for a higher amount",
+          "target": { "goto": "pl_lav_pitch" }
+        }
+      },
+      "listen": false,
+      "confidence_threshold": 0.7
+    },
+
+    "pl_lav_pitch": {
+      "type": "prompt",
+      "say": {
+        "text": "Amount note kar liya hai। वैसे आपके पास Loan Against Vehicle का भी option है — अपनी गाड़ी पर loan ले सकते हैं, बस उस पर कोई existing loan नहीं होना चाहिए। क्या यह लेना चाहेंगे?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "pl_lav_capture" }
+    },
+
+    "pl_lav_capture": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Set interested_response to 'yes' if customer wants LAV, 'no' otherwise."
+      ],
+      "next": { "goto": "pl_sms" }
+    },
+
+    "pl_sms": {
+      "type": "prompt",
+      "say": {
+        "text": "ठीक है ${customer_name} जी, मैं अभी आपके registered mobile number पर एक secure link SMS कर रही हूँ। बस उस link पर click करके application complete कर सकते हैं।",
+        "mode": "generative",
+        "instructions": [
+          "Inform the customer about SMS link being sent to their registered mobile.",
+          "Mention the process is simple — just 4 easy steps.",
+          "Keep it brief. Do not ask any follow-up questions."
+        ]
+      },
+      "next": { "goto": "closing" }
+    },
+
+
+
+    "vl_entry": {
+      "type": "prompt",
+      "say": {
+        "text": "Customer ${customer_name} is interested in Vehicle Loan.",
+        "mode": "generative",
+        "instructions": [
+          "You are handling Vehicle Loan interest for ${customer_name}.",
+          "Check if any pre-approved offer contains vehicle/wheels keywords: ${preapproved_product}, ${preapproved_product1}, ${preapproved_product2}.",
+          "If a vehicle offer EXISTS, pitch it: 'एक बढ़िया news है! AU Bank की तरफ से आपके पास ₹[matched amount] तक का pre-approved ${subcategory_preapproved_product} offer available है। क्या हम इस offer को avail करने के लिए आगे बढ़ें?'",
+          "If NO vehicle offer exists, ask: 'ठीक है! तो क्या आप नई गाड़ी के लिए loan देख रहे हैं, या पुरानी गाड़ी के लिए, या अपनी existing गाड़ी पर loan लेना चाहते हैं?'",
+          "NEVER mention amounts if no vehicle offer exists.",
+          "Map छोटा हाथी=Tata Ace/Small Commercial, बड़े हाथी=truck, Activa/Scooty/Bike=two-wheeler, Taxi=commercial."
+        ]
+      },
+      "next": { "goto": "vl_capture" }
+    },
+
+    "vl_capture": {
+      "type": "variable_capture",
+      "vars": ["interested_response", "vehicle_type", "new_or_used", "loan_amount"],
+      "instructions": [
+        "Set interested_response to 'yes' if customer wants to proceed with pre-approved offer, 'no' if declined, 'lav' if they want Loan Against Vehicle.",
+        "Extract vehicle_type: two-wheeler, four-wheeler, commercial.",
+        "Extract new_or_used: new, used, or loan_against_vehicle.",
+        "Extract loan_amount if mentioned."
+      ],
+      "next": { "goto": "vl_response_router" }
+    },
+
+    "vl_response_router": {
+      "type": "llm_router",
+      "options": {
+        "vl_sms": {
+          "description": "Customer accepted the vehicle loan offer — send SMS link",
+          "target": { "goto": "vl_sms" }
+        },
+        "vl_lav": {
+          "description": "Customer wants Loan Against Vehicle (existing car), or declined offer and we should pitch LAV",
+          "target": { "goto": "vl_lav_pitch" }
+        },
+        "vl_details": {
+          "description": "Customer specified vehicle type or new/used preference — we have enough info to proceed",
+          "target": { "goto": "callback_confirmation" }
+        },
+        "vl_ask_more": {
+          "description": "Need more info — customer didn't specify new/used or vehicle type yet",
+          "target": { "goto": "vl_ask_details" }
+        }
+      },
+      "listen": false,
+      "confidence_threshold": 0.6
+    },
+
+    "vl_ask_details": {
+      "type": "prompt",
+      "say": {
+        "text": "Collecting vehicle details from ${customer_name}.",
+        "mode": "generative",
+        "instructions": [
+          "Check conversation history for vehicle details already provided.",
+          "If vehicle type known but new/used unknown, ask: 'क्या आप नई गाड़ी के लिए देख रहे हैं या पुरानी?'",
+          "If new/used known but vehicle type unknown, ask about two-wheeler/four-wheeler/commercial.",
+          "If customer said USED, do NOT mention two-wheeler option.",
+          "Keep it brief — one question only."
+        ]
+      },
+      "next": { "goto": "vl_details_capture" }
+    },
+
+    "vl_details_capture": {
+      "type": "variable_capture",
+      "vars": ["vehicle_type", "new_or_used"],
+      "instructions": [
+        "Extract vehicle_type and new_or_used from customer response.",
+        "Map bike/scooter/activa → two-wheeler, car/sedan/SUV → four-wheeler, truck/tempo/taxi → commercial."
+      ],
+      "next": { "goto": "callback_confirmation" }
+    },
+
+    "vl_lav_pitch": {
+      "type": "prompt",
+      "say": {
+        "text": "कोई बात नहीं, वैसे आपके पास Loan Against Vehicle का भी option है। आप अपनी गाड़ी पर loan ले सकते हैं, बस शर्त ये है कि उस पर कोई existing loan नहीं होना चाहिए। क्या आप यह loan लेना चाहेंगे?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "vl_lav_capture" }
+    },
+
+    "vl_lav_capture": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Set interested_response to 'yes' if interested in LAV, 'no' if not."
+      ],
+      "next": { "goto": "vl_lav_check" }
+    },
+
+    "vl_lav_check": {
+      "type": "decision",
+      "mode": "deterministic",
+      "routes": {
+        "cases": [
+          {
+            "when": [{ "var": "interested_response", "op": "==", "value": "yes" }],
+            "target": { "goto": "callback_confirmation" }
+          }
+        ],
+        "default": { "goto": "closing" }
+      }
+    },
+
+    "vl_sms": {
+      "type": "prompt",
+      "say": {
+        "text": "ठीक है ${customer_name} जी, मैं अभी आपके registered mobile number पर एक SMS send कर रही हूँ।",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "closing" }
+    },
+
+
+
+    "gl_ask_amount": {
+      "type": "prompt",
+      "say": {
+        "text": "वैसे, आपको कितने Loan Amount की ज़रूरत होगी? मतलब एक रफ़ आइडिया मिल जाता तो बेहतर रहता।",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "gl_capture" }
+    },
+
+    "gl_capture": {
+      "type": "variable_capture",
+      "vars": ["loan_amount"],
+      "instructions": [
+        "Extract the approximate gold loan amount the customer needs."
+      ],
+      "next": { "goto": "callback_confirmation" }
+    },
+
+
+
+    "hl_ask_amount": {
+      "type": "prompt",
+      "say": {
+        "text": "थैंक यू सो मच! क्या मैं जान सकती हूँ कि आपको कितने amount की requirement है? एक अंदाज़ा बता दीजिए, ताकि मैं आगे का process initiate कर सकूँ।",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "hl_capture" }
+    },
+
+    "hl_capture": {
+      "type": "variable_capture",
+      "vars": ["loan_amount"],
+      "instructions": [
+        "Extract the approximate home loan amount the customer needs."
+      ],
+      "next": { "goto": "callback_confirmation" }
+    },
+
+
+
+    "bod_ask_amount": {
+      "type": "prompt",
+      "say": {
+        "text": "जी, सबसे पहले ये बताइये कि आपको Business Loan के लिए approximately कितनी loan amount की requirement है?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "bod_capture_amount" }
+    },
+
+    "bod_capture_amount": {
+      "type": "variable_capture",
+      "vars": ["loan_amount"],
+      "instructions": [
+        "Extract the business loan amount.",
+        "Store as a numeric string (e.g., '2500000' for 25 lakh, '7500000' for 75 lakh)."
+      ],
+      "next": { "goto": "bod_amount_check" }
+    },
+
+    "bod_amount_check": {
+      "type": "llm_router",
+      "listen": false,
+      "confidence_threshold": 0.7,
+      "options": {
+        "bod_ask_company": {
+          "description": "Loan amount is 50 lakhs or more (≥ ₹5,000,000) — need to collect additional business details",
+          "target": { "goto": "bod_ask_company" }
+        },
+        "callback_confirmation": {
+          "description": "Loan amount is less than 50 lakhs (under ₹5,000,000) — proceed directly to callback",
+          "target": { "goto": "callback_confirmation" }
+        }
+      },
+      "instructions": [
+        "Check the loan amount captured from the customer.",
+        "If the amount is ₹50 lakhs or more (≥ 5,000,000), route to collect more business details.",
+        "If the amount is less than ₹50 lakhs, route directly to callback confirmation."
+      ]
+    },
+
+    "bod_ask_company": {
+      "type": "prompt",
+      "say": {
+        "text": "Perfect! तो business details के हिसाब से... क्या मैं आपकी company का नाम जान सकती हूँ?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "bod_capture_company" }
+    },
+
+    "bod_capture_company": {
+      "type": "variable_capture",
+      "vars": ["company_name"],
+      "instructions": [
+        "Extract the company or business name."
+      ],
+      "next": { "goto": "bod_ask_constitution" }
+    },
+
+    "bod_ask_constitution": {
+      "type": "prompt",
+      "say": {
+        "text": "ठीक है, और आपकी business entity का constitution क्या है? मतलब क्या ये Sole Proprietor है, Partnership है, Private Limited कंपनी है, या फिर कुछ और?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "bod_capture_constitution" }
+    },
+
+    "bod_capture_constitution": {
+      "type": "variable_capture",
+      "vars": ["business_constitution"],
+      "instructions": [
+        "Extract business constitution type: sole_proprietor, partnership, private_limited, llp, or other."
+      ],
+      "next": { "goto": "bod_ask_nature" }
+    },
+
+    "bod_ask_nature": {
+      "type": "prompt",
+      "say": {
+        "text": "और वैसे आपका किस चीज़ का काम है — मतलब आप Manufacturer हैं, Trader हैं, या किसी और category में deal करते हैं?",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "bod_capture_nature" }
+    },
+
+    "bod_capture_nature": {
+      "type": "variable_capture",
+      "vars": ["nature_of_business"],
+      "instructions": [
+        "Extract the nature of business: manufacturing, trading, services, or other."
+      ],
+      "next": { "goto": "callback_confirmation" }
+    },
+
+
+
+    "cc_entry": {
+      "type": "prompt",
+      "say": {
+        "text": "Customer ${customer_name} is interested in Credit Card.",
+        "mode": "generative",
+        "instructions": [
+          "You are handling Credit Card interest for ${customer_name}.",
+          "Check if any pre-approved offer contains credit card: ${preapproved_product}, ${preapproved_product1}, ${preapproved_product2}.",
+          "If a Credit Card offer EXISTS, say: 'आपके पास AU Bank की तरफ से ₹[matched amount] तक का एक pre-approved Credit Card offer available है। मैं अभी आपके registered mobile number पर एक secure application link SMS से भेज रही हूँ।'",
+          "If NO Credit Card offer exists, say: 'मैं अभी आपके registered mobile number पर एक secure application link SMS कर रही हूँ। आप बस उस link पर click करके अपनी application online complete कर सकते हैं।'",
+          "NEVER use an amount from a non-Credit-Card offer.",
+          "NEVER pitch any other product."
+        ]
+      },
+      "next": { "goto": "cc_capture" }
+    },
+
+    "cc_capture": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Capture customer acknowledgment of the SMS being sent.",
+        "Set interested_response to 'yes' if they acknowledge positively."
+      ],
+      "next": { "goto": "closing" }
+    },
+
+
+
+    "preapproved_tell": {
+      "type": "prompt",
+      "say": {
+        "text": "Informing ${customer_name} about their pre-approved offer details.",
+        "mode": "generative",
+        "instructions": [
+          "Customer is interested in a pre-approved product. Based on ${customer_intent} or conversation context, identify which pre-approved product matches.",
+          "Tell the customer the amount: 'जी, आपके इस ऑफर के लिए ₹[matched amount] की pre-approved राशि available है।'",
+          "If the product is Personal Loan, also mention: 'वैसे आपके पास Loan Against Vehicle का भी option है। अपनी गाड़ी पर loan ले सकते हैं, बस उस पर कोई existing loan नहीं होना चाहिए। क्या आप इसमें interested रहेंगे?'",
+          "Then say: 'ठीक है, इस offer को लेना बहुत आसान है। मैं अभी आपके registered mobile number पर एक secure application link SMS से भेज रही हूँ।'",
+          "If customer asks about ROI or tenure, share ${roi} and ${loan_tenure} ONLY if asked.",
+          "Do NOT volunteer ROI/tenure information unprompted."
+        ]
+      },
+      "next": { "goto": "preapproved_capture" }
+    },
+
+    "preapproved_capture": {
+      "type": "variable_capture",
+      "vars": ["interested_response"],
+      "instructions": [
+        "Capture customer acknowledgment.",
+        "Set interested_response to 'yes' if they confirm receiving SMS info."
+      ],
+      "next": { "goto": "closing" }
+    },
+
+
+
+    "other_ask_amount": {
+      "type": "prompt",
+      "say": {
+        "text": "थैंक यू सो मच! क्या मैं जान सकती हूँ कि आपको कितने amount की requirement है? एक अंदाज़ा बता दीजिए, ताकि मैं आगे का process initiate कर सकूँ।",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "other_capture" }
+    },
+
+    "other_capture": {
+      "type": "variable_capture",
+      "vars": ["loan_amount"],
+      "instructions": [
+        "Extract the approximate loan amount the customer needs."
+      ],
+      "next": { "goto": "callback_confirmation" }
+    },
+
+
+
+    "callback_confirmation": {
+      "type": "prompt",
+      "say": {
+        "text": "Great, thanks for the information! अब हमारी AU Bank की specialized team आपसे connect करेगी और process आगे बढ़ाएगी। Thank you!",
+        "mode": "deterministic"
+      },
+      "next": { "goto": "closing" }
+    },
+
+    "closing": {
+      "type": "end",
+      "say": {
+        "text": "बहुत धन्यवाद! AU Bank से बात करने के लिए और अपना समय देने के लिए शुक्रिया।",
+        "mode": "generative",
+        "instructions": [
+          "Give a polite closing statement.",
+          "Thank the customer for their time.",
+          "Do NOT ask any follow-up questions like 'how can I help'.",
+          "Do NOT pitch any product.",
+          "Keep it brief — 1-2 sentences."
+        ]
+      }
+    }
+  }
+}
