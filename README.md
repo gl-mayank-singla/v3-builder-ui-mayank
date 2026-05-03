@@ -65,7 +65,11 @@ Then open the URL printed by Vite (often **http://localhost:4173**).
 - **Edit** nodes on the canvas and in the right-hand panel
 - **Export** JSON (copy or download)
 - Use **Auto layout** on the toolbar to re-run graph layout after moving nodes
-- Adjust **flow settings** (gear icon): name, start node, variables, LLM defaults, interrupts
+- Adjust **flow settings** (gear icon): name, start node, variables, LLM defaults, interrupts, terminal tool names
+
+## Supported node types (9)
+
+`prompt`, `variable_capture`, `decision`, `api`, `tool`, `update_vars`, `end`, `llm_router`, and **`single_prompt`** — the multi-turn agent node that combines variable extraction, tool calls, and conditional exits in one LLM-driven loop. Each `single_prompt` exit is either a deterministic `when` rule or an AI-classified `when_llm` description; the first exit that matches routes the flow.
 
 ---
 

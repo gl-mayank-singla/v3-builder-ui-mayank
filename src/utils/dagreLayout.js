@@ -13,6 +13,11 @@ function estimateNodeWidth(rfNode) {
     handleCount = (data.routes?.cases?.length || 0) + 1
   } else if (type === 'llm_router') {
     handleCount = Object.keys(data.options || {}).length
+  } else if (type === 'single_prompt') {
+    const exits = Array.isArray(data.exits)
+      ? data.exits
+      : Object.keys(data.exits || {})
+    handleCount = exits.length || 1
   }
   return Math.max(BASE_WIDTH, handleCount * HANDLE_SLOT_WIDTH + 40)
 }

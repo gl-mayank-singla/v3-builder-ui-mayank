@@ -89,6 +89,24 @@ export function FlowSettingsPanel({ flowConfig, setFlowConfig, nodeIds, onClose 
                   />
                 </div>
                 <div>
+                  <Text className="text-xs">Terminal Tool Names</Text>
+                  <Text type="secondary" className="block text-[11px]">
+                    Tool names that end the flow when invoked (used by single_prompt nodes).
+                  </Text>
+                  <Select
+                    mode="tags"
+                    className="mt-1 w-full"
+                    placeholder="e.g. end_call_tool"
+                    value={flowConfig.terminal_tool_names || []}
+                    onChange={(v) =>
+                      setFlowConfig((fc) => ({
+                        ...fc,
+                        terminal_tool_names: Array.isArray(v) ? v : [],
+                      }))
+                    }
+                  />
+                </div>
+                <div>
                   <Text className="text-xs font-semibold">Feature Flags</Text>
                   <div className="mt-2 space-y-2">
                     {featureEntries.map(([key, val]) => (

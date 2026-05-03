@@ -7,6 +7,7 @@ export const NODE_TYPES = {
   update_vars: { color: '#818cf8', icon: '✏️', label: 'UPDATE VARS' },
   end: { color: '#f87171', icon: '🔴', label: 'END' },
   llm_router: { color: '#facc15', icon: '🧠', label: 'LLM ROUTER' },
+  single_prompt: { color: '#06b6d4', icon: '🤖', label: 'SINGLE PROMPT' },
 }
 
 export const ADD_NODE_GROUPS = [
@@ -38,6 +39,16 @@ export const ADD_NODE_GROUPS = [
       { type: 'tool', title: 'Tool', desc: 'Run custom Python code' },
     ],
   },
+  {
+    label: 'AGENT',
+    items: [
+      {
+        type: 'single_prompt',
+        title: 'Single Prompt',
+        desc: 'Multi-turn agent: extract, call tools, exit on conditions',
+      },
+    ],
+  },
 ]
 
 export const SIMPLE_OUT_TYPES = ['prompt', 'variable_capture', 'api', 'tool', 'update_vars']
@@ -51,6 +62,8 @@ export const DEFAULT_FLOW_CONFIG = {
   interrupts: {},
   feature_flags: { flow_engine_v3_enabled: true },
   global_instructions: { agent_persona: '' },
+  terminal_tool_names: [],
+  agents: {},
 }
 
 export function defaultNodeData(type, id) {
@@ -103,6 +116,14 @@ export function defaultNodeData(type, id) {
         vars: [],
         instructions: [],
       }
+    case 'single_prompt':
+      return {
+        ...base,
+        prompt: '',
+        extract: {},
+        tools: [],
+        exits: [],
+      }
     default:
       return base
   }
@@ -136,6 +157,16 @@ export function summarizeNode(type, data) {
     case 'llm_router': {
       const n = Object.keys(data.options || {}).length
       return `${n} option(s) · listen: ${data.listen ? 'true' : 'false'}`
+    }
+    case 'single_prompt': {
+      const exits = Array.isArray(data.exits) ? data.exits : []
+      const extractCount = Object.keys(data.extract || {}).length
+      const toolCount = (data.tools || []).length
+      const parts = []
+      parts.push(`${exits.length} exit(s)`)
+      if (extractCount) parts.push(`${extractCount} var`)
+      if (toolCount) parts.push(`${toolCount} tool`)
+      return parts.join(' · ') || 'No exits'
     }
     default:
       return ''

@@ -42,6 +42,26 @@ export function patchNodeDataAfterRename(data, oldId, newId) {
     d = { ...d, options: patched }
   }
 
+  if (Array.isArray(d.exits)) {
+    d = {
+      ...d,
+      exits: d.exits.map((ex) =>
+        ex && ex.target === oldId ? { ...ex, target: newId } : ex,
+      ),
+    }
+  } else if (d.exits && typeof d.exits === 'object') {
+    const patched = {}
+    for (const [k, v] of Object.entries(d.exits)) {
+      const nk = k === oldId ? newId : k
+      patched[nk] = v
+    }
+    d = { ...d, exits: patched }
+  }
+
+  if (Array.isArray(d.tools)) {
+    d = { ...d, tools: d.tools.map((t) => (t === oldId ? newId : t)) }
+  }
+
   return d
 }
 

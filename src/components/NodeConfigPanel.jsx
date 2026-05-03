@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Input,
   InputNumber,
@@ -6,9 +7,14 @@ import {
   Radio,
   Select,
   Switch,
+  Tag,
   Typography,
 } from 'antd'
-import { CloseOutlined, DeleteOutlined } from '@ant-design/icons'
+import {
+  CloseOutlined,
+  DeleteOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
 import { NODE_TYPES } from '../constants'
 import { KeyValueList } from './KeyValueEditors'
 
@@ -194,6 +200,18 @@ export function NodeConfigPanel({
             data={data}
             patchData={patchData}
             id={id}
+            edges={edges}
+            setEdges={setEdges}
+            opts={opts}
+          />
+        )}
+
+        {type === 'single_prompt' && (
+          <SinglePromptFields
+            data={data}
+            patchData={patchData}
+            id={id}
+            allNodes={allNodes}
             edges={edges}
             setEdges={setEdges}
             opts={opts}
@@ -1000,5 +1018,431 @@ function LlmRouterFields({ data, patchData, id, edges, setEdges, opts }) {
         </Button>
       </div>
     </>
+  )
+}
+
+function SinglePromptFields({ data, patchData, id, allNodes, edges, setEdges, opts }) {
+  const exits = Array.isArray(data.exits) ? data.exits : []
+  const extract = data.extract || {}
+  const tools = Array.isArray(data.tools) ? data.tools : []
+
+  const toolOptions = allNodes
+    .filter((n) => n.type === 'tool')
+    .map((n) => ({ value: n.id, label: `🛠 ${n.id}` }))
+
+  const setExits = (newExits) => {
+    patchData({ exits: newExits })
+  }
+
+  const syncExitEdge = (index, newTarget, newLabel) => {
+    const handle = `exit-${index}`
+    setEdges((es) => {
+      const rest = es.filter(
+        (e) => !(e.source === id && e.sourceHandle === handle),
+      )
+      if (!newTarget) return rest
+      return [
+        ...rest,
+        {
+          id: `${id}->exit${index}->${newTarget}`,
+          source: id,
+          target: newTarget,
+          sourceHandle: handle,
+          label: newLabel || '',
+        },
+      ]
+    })
+  }
+
+  const labelForExit = (ex) => {
+    if (!ex) return ''
+    const kind = ex.kind || (ex.when_llm ? 'when_llm' : 'when')
+    if (kind === 'when_llm') {
+      const t = (ex.when_llm || '').slice(0, 40)
+      return t ? `~ ${t}${(ex.when_llm || '').length > 40 ? '…' : ''}` : 'LLM exit'
+    }
+    const conds = (ex.when || [])
+      .map((w) => `${w.var || '?'} ${w.op || '=='} ${w.value === null ? 'null' : w.value || '?'}`)
+      .join(' & ')
+    return conds || 'when …'
+  }
+
+  const addExit = () => {
+    const next = [
+      ...exits,
+      {
+        target: '',
+        kind: 'when',
+        when: [{ var: '', op: '!=', value: null }],
+        when_llm: '',
+      },
+    ]
+    setExits(next)
+  }
+
+  const removeExit = (index) => {
+    const next = exits.filter((_, i) => i !== index)
+    setExits(next)
+    setEdges((es) => {
+      const filtered = es.filter(
+        (e) => !(e.source === id && e.sourceHandle === `exit-${index}`),
+      )
+      return filtered.map((e) => {
+        if (e.source !== id || !String(e.sourceHandle || '').startsWith('exit-')) return e
+        const idx = parseInt(String(e.sourceHandle).replace('exit-', ''), 10)
+        if (Number.isNaN(idx) || idx <= index) return e
+        const ni = idx - 1
+        return {
+          ...e,
+          sourceHandle: `exit-${ni}`,
+          id: `${id}->exit${ni}->${e.target}`,
+        }
+      })
+    })
+  }
+
+  const patchExit = (index, partial) => {
+    const next = exits.map((ex, i) => (i === index ? { ...ex, ...partial } : ex))
+    setExits(next)
+    const updated = next[index]
+    syncExitEdge(index, updated.target, labelForExit(updated))
+  }
+
+  const setExitTarget = (index, targetId) => {
+    patchExit(index, { target: targetId || '' })
+  }
+
+  const setExitKind = (index, kind) => {
+    patchExit(index, { kind })
+  }
+
+  const patchExitWhen = (index, when) => {
+    patchExit(index, { when })
+  }
+
+  const patchExitWhenLlm = (index, val) => {
+    patchExit(index, { when_llm: val })
+  }
+
+  const renameExtractKey = (oldKey, newKey) => {
+    if (!newKey || newKey === oldKey) return
+    if (extract[newKey] !== undefined) return
+    const next = {}
+    Object.entries(extract).forEach(([k, v]) => {
+      next[k === oldKey ? newKey : k] = v
+    })
+    patchData({ extract: next })
+  }
+
+  const setExtractValue = (key, val) => {
+    patchData({ extract: { ...extract, [key]: val } })
+  }
+
+  const removeExtractKey = (key) => {
+    const next = { ...extract }
+    delete next[key]
+    patchData({ extract: next })
+  }
+
+  const addExtract = () => {
+    let i = 1
+    let nk = `var_${i}`
+    while (extract[nk] !== undefined) {
+      i += 1
+      nk = `var_${i}`
+    }
+    patchData({ extract: { ...extract, [nk]: '' } })
+  }
+
+  return (
+    <>
+      <Alert
+        type="info"
+        showIcon
+        className="text-xs"
+        message="Multi-turn agent node"
+        description="Runs a conversation loop. The LLM extracts variables from each user message, can call tools, and exits when a condition matches."
+      />
+
+      <div>
+        <Text className="text-xs font-semibold">Prompt (LLM instructions)</Text>
+        <Text type="secondary" className="block text-[11px] mt-0.5">
+          Use ${'${variable_name}'} for current state. Define collection rules, tool rules, and tone.
+        </Text>
+        <TextArea
+          rows={10}
+          className="mt-1 font-mono text-[11px]"
+          placeholder={'CONTEXT:\n  - age: ${age}\n\nCOLLECTION:\n  1. ask name…'}
+          value={data.prompt || ''}
+          onChange={(e) => patchData({ prompt: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <Text className="text-xs font-semibold">
+            Extract Variables
+            {Object.keys(extract).length > 0 && (
+              <Tag color="cyan" className="ml-2 !text-[10px]">
+                {Object.keys(extract).length}
+              </Tag>
+            )}
+          </Text>
+          <Button
+            size="small"
+            type="text"
+            icon={<PlusOutlined />}
+            onClick={addExtract}
+          >
+            Add
+          </Button>
+        </div>
+        <Text type="secondary" className="block text-[11px]">
+          Per-variable extraction instructions in plain English.
+        </Text>
+        <div className="mt-2 space-y-2">
+          {Object.entries(extract).map(([k, v]) => (
+            <div
+              key={k}
+              className="rounded border border-slate-200 bg-slate-50/60 p-2 space-y-1"
+            >
+              <div className="flex items-center gap-1">
+                <Input
+                  size="small"
+                  className="font-mono"
+                  defaultValue={k}
+                  key={`extract-name-${k}`}
+                  placeholder="variable_name"
+                  onBlur={(e) => renameExtractKey(k, e.target.value.trim())}
+                  onPressEnter={(e) => renameExtractKey(k, e.target.value.trim())}
+                />
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => removeExtractKey(k)}
+                />
+              </div>
+              <TextArea
+                rows={3}
+                size="small"
+                placeholder="When the user says ___, extract ___; else null."
+                value={typeof v === 'string' ? v : JSON.stringify(v)}
+                onChange={(e) => setExtractValue(k, e.target.value)}
+              />
+            </div>
+          ))}
+          {Object.keys(extract).length === 0 && (
+            <div className="rounded border border-dashed border-slate-200 px-2 py-3 text-center text-[11px] text-slate-400">
+              No variables yet. Click <strong>Add</strong> to define one.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <Text className="text-xs font-semibold">Tools</Text>
+        <Text type="secondary" className="block text-[11px]">
+          Tool nodes this agent is allowed to call.
+        </Text>
+        <Select
+          mode="multiple"
+          className="mt-1 w-full"
+          placeholder={
+            toolOptions.length ? 'Select tool nodes' : 'No tool nodes in this flow yet'
+          }
+          options={toolOptions}
+          value={tools}
+          onChange={(v) => patchData({ tools: v })}
+        />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <Text className="text-xs font-semibold">
+            Exits
+            {exits.length > 0 && (
+              <Tag color="cyan" className="ml-2 !text-[10px]">
+                {exits.length}
+              </Tag>
+            )}
+          </Text>
+          <Button
+            size="small"
+            type="text"
+            icon={<PlusOutlined />}
+            onClick={addExit}
+          >
+            Add
+          </Button>
+        </div>
+        <Text type="secondary" className="block text-[11px]">
+          Routes evaluated after each turn. First match wins.
+        </Text>
+
+        <div className="mt-2 space-y-2">
+          {exits.map((ex, i) => {
+            const kind = ex.kind || (ex.when_llm ? 'when_llm' : 'when')
+            return (
+              <div
+                key={i}
+                className="rounded border border-cyan-200 bg-cyan-50/40 p-2 space-y-2"
+              >
+                <div className="flex justify-between items-center">
+                  <Text className="text-[11px] font-semibold text-cyan-700">
+                    Exit {i + 1}
+                  </Text>
+                  <Button
+                    size="small"
+                    type="link"
+                    danger
+                    onClick={() => removeExit(i)}
+                  >
+                    Remove
+                  </Button>
+                </div>
+
+                <div>
+                  <Text className="text-[11px]">Go to node</Text>
+                  <Select
+                    className="mt-1 w-full"
+                    showSearch
+                    filterOption={filterNodeOption}
+                    allowClear
+                    placeholder="Search & select target"
+                    options={opts}
+                    value={
+                      edges.find(
+                        (e) => e.source === id && e.sourceHandle === `exit-${i}`,
+                      )?.target ||
+                      ex.target ||
+                      undefined
+                    }
+                    onChange={(v) => setExitTarget(i, v || '')}
+                    size="small"
+                  />
+                </div>
+
+                <div>
+                  <Text className="text-[11px]">Trigger</Text>
+                  <Radio.Group
+                    size="small"
+                    className="mt-1 flex"
+                    value={kind}
+                    onChange={(e) => setExitKind(i, e.target.value)}
+                  >
+                    <Radio.Button value="when">When (rule)</Radio.Button>
+                    <Radio.Button value="when_llm">When (AI)</Radio.Button>
+                  </Radio.Group>
+                </div>
+
+                {kind === 'when' && (
+                  <ExitWhenEditor
+                    when={ex.when || [{ var: '', op: '!=', value: null }]}
+                    onChange={(when) => patchExitWhen(i, when)}
+                  />
+                )}
+
+                {kind === 'when_llm' && (
+                  <div>
+                    <Text className="text-[11px]">AI condition (plain English)</Text>
+                    <TextArea
+                      rows={3}
+                      size="small"
+                      className="mt-1"
+                      placeholder="Customer agrees to proceed; says yes, sure, go ahead."
+                      value={ex.when_llm || ''}
+                      onChange={(e) => patchExitWhenLlm(i, e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {exits.length === 0 && (
+            <div className="rounded border border-dashed border-cyan-200 px-2 py-3 text-center text-[11px] text-slate-400">
+              No exits defined. The node will not be able to advance.
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ExitWhenEditor({ when, onChange }) {
+  const setRow = (idx, partial) => {
+    const next = when.map((w, i) => (i === idx ? { ...w, ...partial } : w))
+    onChange(next)
+  }
+  const removeRow = (idx) => {
+    onChange(when.filter((_, i) => i !== idx))
+  }
+  const addRow = () => {
+    onChange([...when, { var: '', op: '!=', value: null }])
+  }
+
+  return (
+    <div>
+      <Text className="text-[11px]">Conditions (all must match)</Text>
+      <div className="mt-1 space-y-1">
+        {when.map((w, wi) => {
+          const isNull = w.value === null
+          return (
+            <div key={wi} className="flex flex-col gap-1">
+              <div className="flex gap-1">
+                <Input
+                  size="small"
+                  placeholder="variable"
+                  value={w.var}
+                  onChange={(e) => setRow(wi, { var: e.target.value })}
+                />
+                <Select
+                  size="small"
+                  style={{ width: 70 }}
+                  value={w.op || '=='}
+                  options={[
+                    { value: '==', label: '==' },
+                    { value: '!=', label: '!=' },
+                  ]}
+                  onChange={(v) => setRow(wi, { op: v })}
+                />
+                <Input
+                  size="small"
+                  placeholder={isNull ? '(null)' : 'value'}
+                  value={isNull ? '' : w.value ?? ''}
+                  disabled={isNull}
+                  onChange={(e) => setRow(wi, { value: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1 text-[11px] text-slate-600">
+                  <Switch
+                    size="small"
+                    checked={isNull}
+                    onChange={(checked) =>
+                      setRow(wi, { value: checked ? null : '' })
+                    }
+                  />
+                  Compare against <code className="text-[10px]">null</code>
+                </label>
+                <Button
+                  size="small"
+                  type="link"
+                  danger
+                  onClick={() => removeRow(wi)}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+        <Button size="small" type="dashed" block onClick={addRow}>
+          Add condition
+        </Button>
+      </div>
+    </div>
   )
 }

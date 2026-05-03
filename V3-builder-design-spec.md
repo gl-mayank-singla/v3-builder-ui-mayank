@@ -19,7 +19,7 @@ React Flow-based visual builder for FlowEngine V4 agent JSON. Must support round
 
 ---
 
-## Node Visual Design — 8 Types
+## Node Visual Design — 9 Types
 
 All nodes share this card anatomy:
 - Left accent border (4px, type-specific color)
@@ -38,10 +38,12 @@ All nodes share this card anatomy:
 | **Update Vars** | `#818cf8` (indigo) | ✏️ | "Sets N variables" |
 | **End** | `#f87171` (red) | 🔴 | First line of final message |
 | **LLM Router** | `#facc15` (yellow) | 🧠 | "N options · listen: true/false" |
+| **Single Prompt** | `#06b6d4` (cyan) | 🤖 | "N exit(s) · M var · K tool" |
 
 ### Special node behaviors
 - **Start node**: Green ring/badge indicator on whichever node is set as `start`
-- **Decision / LLM Router**: Multiple output handles — one per route/option + one for default (dashed)
+- **Decision / LLM Router / Single Prompt**: Multiple output handles — one per route/option/exit
+- **Single Prompt** handles: emerald = deterministic (`when`) exit, cyan = LLM (`when_llm`) exit
 - **End node**: No output handle (terminal)
 
 ---
@@ -57,6 +59,8 @@ Triggered from "+ Add Node" button in floating toolbar. Grouped popover:
 **LOGIC**: Decision ("Route based on conditions or rules"), LLM Router ("Intelligent routing via AI classification")
 
 **INTEGRATION**: API ("Call an external HTTP endpoint"), Tool ("Run custom Python code")
+
+**AGENT**: Single Prompt ("Multi-turn agent: extract, call tools, exit on conditions")
 
 - Search filter at top
 - On click: node placed at canvas center, auto-selected, side panel opens
@@ -140,6 +144,17 @@ Panel opens when a node is clicked. Closes on ESC or clicking empty canvas.
   - Target node: dropdown (or auto-created from key in simple format)
   - "+ Add Option" button
 - Model Override: optional
+
+#### Single Prompt
+- **Prompt** (large, monospace textarea): full LLM instructions for the multi-turn loop
+- **Extract Variables**: cards keyed by variable name, each with a per-variable plain-English extraction instruction (textarea)
+- **Tools**: multi-select of `tool` node IDs available in the flow
+- **Exits** (cards, evaluated in order):
+  - Go to node: dropdown of node IDs
+  - Trigger: radio — "When (rule)" or "When (AI)"
+  - When (rule) → list of `var op value` rows (op = `==`/`!=`, with a "Compare against `null`" toggle); ALL conditions AND together
+  - When (AI) → plain-English description for `when_llm`
+- No "Next Node" — routing is exclusively via Exits
 
 ### "Next Node" dropdowns
 All dropdowns listing node targets should show the full list of node IDs in the flow, with the node type icon next to each for quick identification.
@@ -235,6 +250,7 @@ Triggered by gear icon in top bar. Replaces node config in the right panel. 4 ta
 | Decision default edge (dashed) | `routes.default.goto` |
 | LLM Router option edge (labeled) | `options.{key}.target.goto` (full format) |
 | LLM Router auto (simple format) | Option key = target node ID |
+| Single Prompt exit (labeled, dashed when AI) | `exits.{target_id}.when` or `exits.{target_id}.when_llm` |
 
 ---
 

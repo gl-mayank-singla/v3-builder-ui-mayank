@@ -11,23 +11,73 @@ function flowConfigFromParsed(flow) {
     interrupts: flow.interrupts || {},
     feature_flags: flow.feature_flags || {},
     global_instructions: flow.global_instructions || { agent_persona: '' },
+    terminal_tool_names: Array.isArray(flow.terminal_tool_names)
+      ? flow.terminal_tool_names
+      : [],
+    agents: flow.agents && typeof flow.agents === 'object' ? flow.agents : {},
   }
+}
+
+function exitsObjectToArray(exitsObj) {
+  if (!exitsObj || typeof exitsObj !== 'object') return []
+  return Object.entries(exitsObj).map(([target, cond]) => {
+    const c = cond || {}
+    if (c.when_llm !== undefined) {
+      return {
+        target,
+        kind: 'when_llm',
+        when: [],
+        when_llm: c.when_llm || '',
+      }
+    }
+    return {
+      target,
+      kind: 'when',
+      when: Array.isArray(c.when) ? c.when : [],
+      when_llm: '',
+    }
+  })
+}
+
+function exitLabelText(exit) {
+  if (!exit) return ''
+  if (exit.kind === 'when_llm') {
+    const t = (exit.when_llm || '').replace(/\s+/g, ' ').trim()
+    return t.length > 32 ? `~ ${t.slice(0, 32)}…` : `~ ${t}`
+  }
+  return (exit.when || [])
+    .map(
+      (w) =>
+        `${w.var || '?'} ${w.op || '=='} ${w.value === null ? 'null' : w.value || '?'}`,
+    )
+    .join(' & ') || 'when'
 }
 
 export function flowToReactFlow(flow) {
   const flowConfig = flowConfigFromParsed(flow)
   const nodeEntries = Object.entries(flow.nodes || {})
 
-  const rfNodes = nodeEntries.map(([id, nodeData]) => ({
-    id,
-    type: nodeData.type,
-    position: { x: 0, y: 0 },
-    data: {
+  const rfNodes = nodeEntries.map(([id, nodeData]) => {
+    const data = {
       ...nodeData,
       nodeId: id,
       isStart: id === flow.start,
-    },
-  }))
+    }
+    if (nodeData.type === 'single_prompt') {
+      data.exits = exitsObjectToArray(nodeData.exits)
+      data.tools = Array.isArray(nodeData.tools) ? nodeData.tools : []
+      data.extract = nodeData.extract && typeof nodeData.extract === 'object'
+        ? nodeData.extract
+        : {}
+      data.prompt = nodeData.prompt || ''
+    }
+    return {
+      id,
+      type: nodeData.type,
+      position: { x: 0, y: 0 },
+      data,
+    }
+  })
 
   const rfEdges = []
 
@@ -78,6 +128,21 @@ export function flowToReactFlow(flow) {
             label: key,
           })
         }
+      })
+    }
+
+    if (node.type === 'single_prompt' && node.exits) {
+      const arr = exitsObjectToArray(node.exits)
+      arr.forEach((ex, i) => {
+        if (!ex.target) return
+        rfEdges.push({
+          id: `${id}->exit${i}->${ex.target}`,
+          source: id,
+          target: ex.target,
+          sourceHandle: `exit-${i}`,
+          label: exitLabelText(ex),
+          style: ex.kind === 'when_llm' ? { strokeDasharray: '4,3' } : undefined,
+        })
       })
     }
   })
@@ -216,6 +281,32 @@ export function reactFlowToExportPayload(nodes, edges, flowConfig) {
         if (ne) node.next = { goto: ne.target }
         break
       }
+      case 'single_prompt': {
+        node.prompt = nodeData.prompt || ''
+        node.extract = nodeData.extract && typeof nodeData.extract === 'object'
+          ? nodeData.extract
+          : {}
+        if (Array.isArray(nodeData.tools) && nodeData.tools.length) {
+          node.tools = nodeData.tools
+        }
+        const arr = Array.isArray(nodeData.exits) ? nodeData.exits : []
+        const exitsObj = {}
+        arr.forEach((ex, i) => {
+          const e = edgeBySourceHandle(edges, id, `exit-${i}`)
+          const target = e?.target || ex.target
+          if (!target) return
+          const kind = ex.kind || (ex.when_llm ? 'when_llm' : 'when')
+          if (kind === 'when_llm') {
+            exitsObj[target] = { when_llm: ex.when_llm || '' }
+          } else {
+            exitsObj[target] = {
+              when: Array.isArray(ex.when) ? ex.when : [],
+            }
+          }
+        })
+        node.exits = exitsObj
+        break
+      }
       default:
         break
     }
@@ -223,7 +314,7 @@ export function reactFlowToExportPayload(nodes, edges, flowConfig) {
     outNodes[id] = node
   })
 
-  return {
+  const out = {
     name: flowConfig.name,
     version: flowConfig.version || '4.0.0',
     start: flowConfig.start,
@@ -234,6 +325,13 @@ export function reactFlowToExportPayload(nodes, edges, flowConfig) {
     global_instructions: flowConfig.global_instructions || { agent_persona: '' },
     nodes: outNodes,
   }
+  if (Array.isArray(flowConfig.terminal_tool_names)) {
+    out.terminal_tool_names = flowConfig.terminal_tool_names
+  }
+  if (flowConfig.agents && typeof flowConfig.agents === 'object') {
+    out.agents = flowConfig.agents
+  }
+  return out
 }
 
 export function parseImportJson(jsonString) {

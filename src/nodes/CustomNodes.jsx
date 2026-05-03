@@ -139,6 +139,65 @@ export function DecisionNode({ id, data, type, selected }) {
   )
 }
 
+export function SinglePromptNode({ id, data, type, selected }) {
+  const exits = Array.isArray(data?.exits) ? data.exits : []
+  const total = exits.length || 1
+
+  return (
+    <NodeCard
+      id={id}
+      data={data}
+      type={type}
+      selected={selected}
+      sourceHandles={
+        <>
+          {exits.map((ex, i) => {
+            const kind = ex?.kind || (ex?.when_llm ? 'when_llm' : 'when')
+            const isLlm = kind === 'when_llm'
+            const label =
+              ex?.target ||
+              (isLlm ? ex?.when_llm || `LLM exit ${i + 1}` : `Exit ${i + 1}`)
+            return (
+              <Handle
+                key={`exit-${i}`}
+                type="source"
+                position={Position.Bottom}
+                id={`exit-${i}`}
+                className={`!w-2.5 !h-2.5 !border-0 !-bottom-[5px] ${
+                  isLlm ? '!bg-cyan-500' : '!bg-emerald-500'
+                }`}
+                style={{ left: `${((i + 1) / (total + 1)) * 100}%` }}
+                title={label}
+              />
+            )
+          })}
+        </>
+      }
+    >
+      <Handle type="target" position={Position.Top} id="default-target" className="!bg-slate-400 !w-2.5 !h-2.5 !-top-[5px]" />
+      <div className="flex pointer-events-none flex-wrap justify-around px-3 pb-1 pt-0.5 text-center gap-x-1">
+        {exits.map((ex, i) => {
+          const kind = ex?.kind || (ex?.when_llm ? 'when_llm' : 'when')
+          const isLlm = kind === 'when_llm'
+          const label = ex?.target || `exit ${i + 1}`
+          return (
+            <div
+              key={i}
+              className={`truncate text-[9px] leading-tight max-w-[60px] ${
+                isLlm ? 'text-cyan-700' : 'text-emerald-700'
+              }`}
+              title={label}
+            >
+              {isLlm ? '~' : '='}
+              {label}
+            </div>
+          )
+        })}
+      </div>
+    </NodeCard>
+  )
+}
+
 export function LlmRouterNode({ id, data, type, selected }) {
   const keys = Object.keys(data?.options || {})
 
@@ -185,4 +244,5 @@ export const nodeTypes = {
   update_vars: UpdateVarsNode,
   end: EndNode,
   llm_router: LlmRouterNode,
+  single_prompt: SinglePromptNode,
 }
